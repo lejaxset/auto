@@ -17,6 +17,7 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+local WEBHOOK_USUARIO = nil
 
 --=============================================================
 --  🔑 CAPTURA DA KEY E VALIDAÇÃO
@@ -26,8 +27,6 @@ if type(API_KEY) ~= "string" or API_KEY == "" then
     LocalPlayer:Kick("❌ Você precisa executar passando a sua Key.\nExemplo: loadstring(...) (\"LEJAX-XXXX-YYYY\")")
     return
 end
-
-local WEBHOOK_USUARIO = nil
 
 local function validarKey()
     local req = syn and syn.request or http_request or request or http.request
@@ -58,6 +57,28 @@ local isKeyValid, motivo = validarKey()
 if not isKeyValid then
     LocalPlayer:Kick("❌ Falha na validação: " .. motivo)
     return
+end
+
+--=============================================================
+--  🔗 VALIDAÇÃO DE LINK DE SERVIDOR PRIVADO
+--=============================================================
+local function validarLinkServidor(link)
+    if type(link) ~= "string" then return false, "Link inválido" end
+    link = link:gsub("^%s+", ""):gsub("%s+$", "")
+    if link == "" then return false, "Link vazio" end
+    
+    local dominioOk = link:match("^https?://[w%.]*roblox%.com/") or link:match("^[w%.]*roblox%.com/")
+    if not dominioOk then return false, "Não é um link do Roblox" end
+    
+    if not link:lower():find("/share", 1, true) then return false, "Não é um link de compartilhamento" end
+    
+    local tipo = link:match("[?&]type=([^&#]+)")
+    if not tipo or tipo:lower() ~= "server" then return false, "Não é um link de servidor" end
+    
+    local code = link:match("[?&]code=([^&#]+)")
+    if not code or #code ~= 32 or not code:match("^[0-9a-fA-F]+$") then return false, "Código de servidor inválido" end
+
+    return true, "OK"
 end
 
 --=============================================================
