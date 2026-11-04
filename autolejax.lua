@@ -3,7 +3,7 @@
 --=============================================================
 
 -- ⬇️⬇️⬇️ CONFIGURAÇÃO DA SUA API (SQUARE CLOUD) ⬇️⬇️⬇️
-local API_URL = "https://SEU-LINK-AQUI.squareweb.app/api/validar" -- 🔴 COLOQUE SEU LINK AQUI
+local API_URL = "https://lejax.squareweb.app/api/validar"
 -- ⬆️⬆️⬆️ FIM DA CONFIGURAÇÃO ⬆️⬆️⬆️
 
 -- ⬇️⬇️⬇️ CONFIGURAÇÃO DE TEXTOS ⬇️⬇️⬇️
